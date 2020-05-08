@@ -41,7 +41,7 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
     def __init__(self, plans_file, fold, output_folder=None, dataset_directory=None, batch_dice=True, stage=None,
                  unpack_data=True, deterministic=True, previous_trainer="nnUNetTrainerV2", fp16=False):
         super().__init__(plans_file, fold, output_folder, dataset_directory,
-                         batch_dice, stage, unpack_data, deterministic, fp16)
+                                                          batch_dice, stage, unpack_data, deterministic, fp16)
         self.init_args = (plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                           deterministic, previous_trainer, fp16)
 
@@ -167,14 +167,13 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
                                                                     self.data_aug_params[
                                                                         'patch_size_for_spatialtransform'],
                                                                     self.data_aug_params,
-                                                                    deep_supervision_scales=self.deep_supervision_scales,
-                                                                    pin_memory=self.pin_memory)
+                                                                    deep_supervision_scales=self.deep_supervision_scales)
                 self.print_to_log_file("TRAINING KEYS:\n %s" % (str(self.dataset_tr.keys())),
                                        also_print_to_console=False)
                 self.print_to_log_file("VALIDATION KEYS:\n %s" % (str(self.dataset_val.keys())),
                                        also_print_to_console=False)
             else:
-                pass
+                    pass
 
             self.initialize_network()
             self.initialize_optimizer_and_scheduler()
@@ -185,14 +184,11 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
 
         self.was_initialized = True
 
-    def validate(self, do_mirroring: bool = True, use_sliding_window: bool = True, step_size: float = 0.5,
+    def validate(self, do_mirroring: bool = True, use_train_mode: bool = False, tiled: bool = True, step: int = 2,
                  save_softmax: bool = True, use_gaussian: bool = True, overwrite: bool = True,
                  validation_folder_name: str = 'validation_raw', debug: bool = False, all_in_gpu: bool = False,
                  force_separate_z: bool = None, interpolation_order: int = 3, interpolation_order_z=0):
         assert self.was_initialized, "must initialize, ideally with checkpoint (or train first)"
-
-        current_mode = self.network.training
-        self.network.eval()
 
         # save whether network is in deep supervision mode or not
         ds = self.network.do_ds
@@ -207,8 +203,9 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
         maybe_mkdir_p(output_folder)
         # this is for debug purposes
         my_input_args = {'do_mirroring': do_mirroring,
-                         'use_sliding_window': use_sliding_window,
-                         'step': step_size,
+                         'use_train_mode': use_train_mode,
+                         'tiled': tiled,
+                         'step': step,
                          'save_softmax': save_softmax,
                          'use_gaussian': use_gaussian,
                          'overwrite': overwrite,
@@ -248,10 +245,11 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
                 print(k, data.shape)
                 data[-1][data[-1] == -1] = 0
                 data_for_net = np.concatenate((data[:-1], to_one_hot(seg_from_prev_stage[0], range(1, self.num_classes))))
-
-                softmax_pred = self.predict_preprocessed_data_return_seg_and_softmax(
-                    data_for_net, do_mirroring, mirror_axes, use_sliding_window, step_size, use_gaussian,
-                    all_in_gpu=all_in_gpu)[1]
+                softmax_pred = self.predict_preprocessed_data_return_softmax(data_for_net, do_mirroring, 1,
+                                                                             use_train_mode, 1, mirror_axes, tiled,
+                                                                             True, step, self.patch_size,
+                                                                             use_gaussian=use_gaussian,
+                                                                             all_in_gpu=all_in_gpu)
 
                 softmax_pred = softmax_pred.transpose([0] + [i + 1 for i in self.transpose_backward])
 
@@ -270,12 +268,10 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
                 if np.prod(softmax_pred.shape) > (2e9 / 4 * 0.85):  # *0.85 just to be save
                     np.save(join(output_folder, fname + ".npy"), softmax_pred)
                     softmax_pred = join(output_folder, fname + ".npy")
-
                 results.append(export_pool.starmap_async(save_segmentation_nifti_from_softmax,
                                                          ((softmax_pred, join(output_folder, fname + ".nii.gz"),
                                                            properties, interpolation_order, None, None, None,
-                                                           softmax_fname, None, force_separate_z,
-                                                           interpolation_order_z),
+                                                           softmax_fname, force_separate_z, interpolation_order_z),
                                                           )
                                                          )
                                )
@@ -292,7 +288,7 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
         job_name = self.experiment_name
         _ = aggregate_scores(pred_gt_tuples, labels=list(range(self.num_classes)),
                              json_output_file=join(output_folder, "summary.json"),
-                             json_name=job_name + " val tiled %s" % (str(use_sliding_window)),
+                             json_name=job_name + " val tiled %s" % (str(tiled)),
                              json_author="Fabian",
                              json_task=task, num_threads=default_num_threads)
 
@@ -329,5 +325,4 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
                     raise e
 
         # restore network deep supervision mode
-        self.network.train(current_mode)
         self.network.do_ds = ds

@@ -48,7 +48,8 @@ class DatasetAnalyzer(object):
         return properties
 
     @staticmethod
-    def _check_if_all_in_one_region(seg, regions):
+    def _check_if_all_in_one_region(args):
+        seg, regions = args
         res = OrderedDict()
         for r in regions:
             new_seg = np.zeros(seg.shape)
@@ -62,23 +63,28 @@ class DatasetAnalyzer(object):
         return res
 
     @staticmethod
-    def _collect_class_and_region_sizes(seg, all_classes, vol_per_voxel):
+    def _collect_class_and_region_sizes(args):
+        print("67 started")
+        seg, all_classes, vol_per_voxel = args
+        print("68 started")
         volume_per_class = OrderedDict()
         region_volume_per_class = OrderedDict()
+        print("70 started")
         for c in all_classes:
+            print("class: ", c)
             region_volume_per_class[c] = []
+            print("np sum")
             volume_per_class[c] = np.sum(seg == c) * vol_per_voxel
+            print("calling label")
             labelmap, numregions = label(seg == c, return_num=True)
             for l in range(1, numregions + 1):
+                print("l: ", l)
+                print("out of: ", numregions+1)
                 region_volume_per_class[c].append(np.sum(labelmap == l) * vol_per_voxel)
+        print("collect function ended")
         return volume_per_class, region_volume_per_class
 
-    def _get_unique_labels(self, patient_identifier):
-        seg = np.load(join(self.folder_with_cropped_data, patient_identifier) + ".npz")['data'][-1]
-        unique_classes = np.unique(seg)
-        return unique_classes
-
-    def _load_seg_analyze_classes(self, patient_identifier, all_classes):
+    def _load_seg_analyze_classes(self, args):
         """
         1) what class is in this training case?
         2) what is the size distribution for each class?
@@ -86,24 +92,27 @@ class DatasetAnalyzer(object):
         4) check if all in one region
         :return:
         """
+        patient_identifier, all_classes = args
         seg = np.load(join(self.folder_with_cropped_data, patient_identifier) + ".npz")['data'][-1]
         pkl = load_pickle(join(self.folder_with_cropped_data, patient_identifier) + ".pkl")
         vol_per_voxel = np.prod(pkl['itk_spacing'])
 
         # ad 1)
         unique_classes = np.unique(seg)
+        print("unique_classes: ", unique_classes)
+        print("shape of seg: ", seg.shape)
 
         # 4) check if all in one region
         regions = list()
         regions.append(list(all_classes))
         for c in all_classes:
             regions.append((c, ))
-
-        all_in_one_region = self._check_if_all_in_one_region(seg, regions)
-
+        print("line 102 commencing")
+        all_in_one_region = self._check_if_all_in_one_region((seg, regions))
+        print("line 102 ended, line 103 commencing")
         # 2 & 3) region sizes
-        volume_per_class, region_sizes = self._collect_class_and_region_sizes(seg, all_classes, vol_per_voxel)
-
+        volume_per_class, region_sizes = self._collect_class_and_region_sizes((seg, all_classes, vol_per_voxel))
+        print("line 103 ended, function returning")
         return unique_classes, all_in_one_region, volume_per_class, region_sizes
 
     def get_classes(self):
@@ -117,21 +126,19 @@ class DatasetAnalyzer(object):
 
         if self.overwrite or not isfile(self.props_per_case_file):
             p = Pool(self.num_processes)
-            #res = p.starmap(self._load_seg_analyze_classes, zip(self.patient_identifiers,
-            #                                                [all_classes] * len(self.patient_identifiers)))
-            res = p.map(self._get_unique_labels, self.patient_identifiers)
+            res = p.map(self._load_seg_analyze_classes, zip(self.patient_identifiers,
+                                                            [all_classes] * len(self.patient_identifiers)))
             p.close()
             p.join()
 
             props_per_patient = OrderedDict()
-            #for p, (unique_classes, all_in_one_region, voxels_per_class, region_volume_per_class) in \
-            for p, unique_classes in \
-                            zip(self.patient_identifiers, res):
+            for p, (unique_classes, all_in_one_region, voxels_per_class, region_volume_per_class) in \
+                    zip(self.patient_identifiers, res):
                 props = dict()
                 props['has_classes'] = unique_classes
-                #props['only_one_region'] = all_in_one_region
-                #props['volume_per_class'] = voxels_per_class
-                #props['region_volume_per_class'] = region_volume_per_class
+                props['only_one_region'] = all_in_one_region
+                props['volume_per_class'] = voxels_per_class
+                props['region_volume_per_class'] = region_volume_per_class
                 props_per_patient[p] = props
 
             save_pickle(props_per_patient, self.props_per_case_file)
@@ -166,7 +173,8 @@ class DatasetAnalyzer(object):
             size_reduction[p] = size_red
         return size_reduction
 
-    def _get_voxels_in_foreground(self, patient_identifier, modality_id):
+    def _get_voxels_in_foreground(self, args):
+        patient_identifier, modality_id = args
         all_data = np.load(join(self.folder_with_cropped_data, patient_identifier) + ".npz")['data']
         modality = all_data[modality_id]
         mask = all_data[-1] > 0
@@ -193,7 +201,7 @@ class DatasetAnalyzer(object):
             results = OrderedDict()
             for mod_id in range(num_modalities):
                 results[mod_id] = OrderedDict()
-                v = p.starmap(self._get_voxels_in_foreground, zip(self.patient_identifiers,
+                v = p.map(self._get_voxels_in_foreground, zip(self.patient_identifiers,
                                                               [mod_id] * len(self.patient_identifiers)))
 
                 w = []

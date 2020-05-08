@@ -17,7 +17,6 @@ import shutil
 from collections import OrderedDict
 from multiprocessing import Pool
 from time import sleep
-from typing import Tuple, List
 
 import matplotlib
 import nnunet
@@ -133,7 +132,6 @@ class nnUNetTrainer(NetworkTrainer):
         self.oversample_foreground_percent = 0.33
 
         self.conv_per_stage = None
-        self.regions_class_order = None
 
     def update_fold(self, fold):
         """
@@ -263,8 +261,7 @@ class nnUNetTrainer(NetworkTrainer):
                                     self.net_num_pool_op_kernel_sizes, self.net_conv_kernel_sizes, False, True, True)
         self.network.inference_apply_nonlin = softmax_helper
 
-        if torch.cuda.is_available():
-            self.network.cuda()
+        self.network.cuda()
 
     def initialize_optimizer_and_scheduler(self):
         assert self.network is not None, "self.initialize_network must be called first"
@@ -279,12 +276,8 @@ class nnUNetTrainer(NetworkTrainer):
         try:
             from batchgenerators.utilities.file_and_folder_operations import join
             import hiddenlayer as hl
-            if torch.cuda.is_available():
-                g = hl.build_graph(self.network, torch.rand((1, self.num_input_channels, *self.patch_size)).cuda(),
-                                   transforms=None)
-            else:
-                g = hl.build_graph(self.network, torch.rand((1, self.num_input_channels, *self.patch_size)),
-                                   transforms=None)
+            g = hl.build_graph(self.network, torch.rand((1, self.num_input_channels, *self.patch_size)).cuda(),
+                               transforms=None)
             g.save(join(self.output_folder, "network_architecture.pdf"))
             del g
         except Exception as e:
@@ -295,8 +288,7 @@ class nnUNetTrainer(NetworkTrainer):
             self.print_to_log_file(self.network)
             self.print_to_log_file("\n")
         finally:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
 
     def run_training(self):
         dct = OrderedDict()
@@ -426,8 +418,7 @@ class nnUNetTrainer(NetworkTrainer):
                                                                  'current_spacing'])
         return d, s, properties
 
-    def preprocess_predict_nifti(self, input_files: List[str], output_file: str = None,
-                                 softmax_ouput_file: str = None) -> None:
+    def preprocess_predict_nifti(self, input_files, output_file=None, softmax_ouput_file=None):
         """
         Use this to predict new data
         :param input_files:
@@ -438,10 +429,9 @@ class nnUNetTrainer(NetworkTrainer):
         print("preprocessing...")
         d, s, properties = self.preprocess_patient(input_files)
         print("predicting...")
-        pred = self.predict_preprocessed_data_return_seg_and_softmax(d, self.data_aug_params["do_mirror"],
-                                                                     self.data_aug_params['mirror_axes'], True, 0.5,
-                                                                     True, 'constant', {'constant_values': 0},
-                                                                     self.patch_size, True)[1]
+        pred = self.predict_preprocessed_data_return_softmax(d, self.data_aug_params["do_mirror"], 1, False, 1,
+                                                             self.data_aug_params['mirror_axes'], True, True, 2,
+                                                             self.patch_size, True)
         pred = pred.transpose([0] + [i + 1 for i in self.transpose_backward])
 
         print("resampling to original spacing and nifti export...")
@@ -449,47 +439,60 @@ class nnUNetTrainer(NetworkTrainer):
                                              None)
         print("done")
 
-    def predict_preprocessed_data_return_seg_and_softmax(self, data: np.ndarray, do_mirroring: bool = True,
-                                                         mirror_axes: Tuple[int] = None, use_sliding_window: bool = True,
-                                                         step_size: float = 0.5, use_gaussian: bool = True,
-                                                         pad_border_mode: str = 'constant', pad_kwargs: dict = None,
-                                                         all_in_gpu: bool = True,
-                                                         verbose: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+    def predict_preprocessed_data_return_softmax(self, data, do_mirroring, num_repeats, use_train_mode, batch_size,
+                                                 mirror_axes, tiled, tile_in_z, step, min_size, use_gaussian,
+                                                 all_in_gpu=False):
         """
+        Don't use this. If you need softmax output, use preprocess_predict_nifti and set softmax_output_file.
         :param data:
         :param do_mirroring:
+        :param num_repeats:
+        :param use_train_mode:
+        :param batch_size:
         :param mirror_axes:
-        :param use_sliding_window:
-        :param step_size:
+        :param tiled:
+        :param tile_in_z:
+        :param step:
+        :param min_size:
         :param use_gaussian:
-        :param pad_border_mode:
-        :param pad_kwargs:
-        :param all_in_gpu:
-        :param verbose:
+        :param use_temporal:
         :return:
         """
-        if pad_border_mode == 'constant' and pad_kwargs is None:
-            pad_kwargs = {'constant_values': 0}
-
-        if do_mirroring and mirror_axes is None:
-            mirror_axes = self.data_aug_params['mirror_axes']
-
-        if do_mirroring:
-            assert self.data_aug_params["do_mirror"], "Cannot do mirroring as test time augmentation when training " \
-                                                      "was done without mirroring"
-
         valid = list((SegmentationNetwork, nn.DataParallel))
         assert isinstance(self.network, tuple(valid))
+        return self.network.predict_3D(data, do_mirroring, num_repeats, use_train_mode, batch_size, mirror_axes,
+                                       tiled, tile_in_z, step, min_size, use_gaussian=use_gaussian,
+                                       pad_border_mode=self.inference_pad_border_mode,
+                                       pad_kwargs=self.inference_pad_kwargs, all_in_gpu=all_in_gpu)[2]
 
-        current_mode = self.network.training
-        self.network.eval()
-        ret = self.network.predict_3D(data, do_mirroring, mirror_axes, use_sliding_window, step_size, self.patch_size,
-                                       self.regions_class_order, use_gaussian, pad_border_mode, pad_kwargs,
-                                       all_in_gpu, verbose)
-        self.network.train(current_mode)
-        return ret
+    def predict_preprocessed_data_return_softmax_and_seg(self, data, do_mirroring, num_repeats, use_train_mode,
+                                                         batch_size,
+                                                         mirror_axes, tiled, tile_in_z, step, min_size, use_gaussian,
+                                                         all_in_gpu=False):
+        """
+        Don't use this. If you need softmax output, use preprocess_predict_nifti and set softmax_output_file.
+        :param data:
+        :param do_mirroring:
+        :param num_repeats:
+        :param use_train_mode:
+        :param batch_size:
+        :param mirror_axes:
+        :param tiled:
+        :param tile_in_z:
+        :param step:
+        :param min_size:
+        :param use_gaussian:
+        :param use_temporal:
+        :return:
+        """
+        assert isinstance(self.network, (SegmentationNetwork, nn.DataParallel))
+        res = self.network.predict_3D(data, do_mirroring, num_repeats, use_train_mode, batch_size, mirror_axes,
+                                      tiled, tile_in_z, step, min_size, use_gaussian=use_gaussian,
+                                      pad_border_mode=self.inference_pad_border_mode,
+                                      pad_kwargs=self.inference_pad_kwargs, all_in_gpu=all_in_gpu)
+        return [res[i] for i in [0, 2]]
 
-    def validate(self, do_mirroring: bool = True, use_sliding_window: bool = True, step_size: float = 0.5,
+    def validate(self, do_mirroring: bool = True, use_train_mode: bool = False, tiled: bool = True, step: int = 2,
                  save_softmax: bool = True, use_gaussian: bool = True, overwrite: bool = True,
                  validation_folder_name: str = 'validation_raw', debug: bool = False, all_in_gpu: bool = False,
                  force_separate_z: bool = None, interpolation_order: int = 3, interpolation_order_z: int = 0):
@@ -497,10 +500,6 @@ class nnUNetTrainer(NetworkTrainer):
         if debug=True then the temporary files generated for postprocessing determination will be kept
         :return:
         """
-
-        current_mode = self.network.training
-        self.network.eval()
-
         assert self.was_initialized, "must initialize, ideally with checkpoint (or train first)"
         if self.dataset_val is None:
             self.load_dataset()
@@ -511,8 +510,9 @@ class nnUNetTrainer(NetworkTrainer):
         maybe_mkdir_p(output_folder)
         # this is for debug purposes
         my_input_args = {'do_mirroring': do_mirroring,
-                         'use_sliding_window': use_sliding_window,
-                         'step_size': step_size,
+                         'use_train_mode': use_train_mode,
+                         'tiled': tiled,
+                         'step': step,
                          'save_softmax': save_softmax,
                          'use_gaussian': use_gaussian,
                          'overwrite': overwrite,
@@ -547,9 +547,11 @@ class nnUNetTrainer(NetworkTrainer):
                 print(k, data.shape)
                 data[-1][data[-1] == -1] = 0
 
-                softmax_pred = self.predict_preprocessed_data_return_seg_and_softmax(
-                    data[:-1], do_mirroring, mirror_axes, use_sliding_window, step_size, use_gaussian, all_in_gpu=all_in_gpu
-                )[1]
+                softmax_pred = self.predict_preprocessed_data_return_softmax(data[:-1], do_mirroring, 1,
+                                                                             use_train_mode, 1, mirror_axes, tiled,
+                                                                             True, step, self.patch_size,
+                                                                             use_gaussian=use_gaussian,
+                                                                             all_in_gpu=all_in_gpu)
 
                 softmax_pred = softmax_pred.transpose([0] + [i + 1 for i in self.transpose_backward])
 
@@ -558,12 +560,12 @@ class nnUNetTrainer(NetworkTrainer):
                 else:
                     softmax_fname = None
 
-                """There is a problem with python process communication that prevents us from communicating obejcts
-                larger than 2 GB between processes (basically when the length of the pickle string that will be sent is
-                communicated by the multiprocessing.Pipe object then the placeholder (\%i I think) does not allow for long
-                enough strings (lol). This could be fixed by changing i to l (for long) but that would require manually
-                patching system python code. We circumvent that problem here by saving softmax_pred to a npy file that will
-                then be read (and finally deleted) by the Process. save_segmentation_nifti_from_softmax can take either
+                """There is a problem with python process communication that prevents us from communicating obejcts 
+                larger than 2 GB between processes (basically when the length of the pickle string that will be sent is 
+                communicated by the multiprocessing.Pipe object then the placeholder (\%i I think) does not allow for long 
+                enough strings (lol). This could be fixed by changing i to l (for long) but that would require manually 
+                patching system python code. We circumvent that problem here by saving softmax_pred to a npy file that will 
+                then be read (and finally deleted) by the Process. save_segmentation_nifti_from_softmax can take either 
                 filename or np.ndarray and will handle this automatically"""
                 if np.prod(softmax_pred.shape) > (2e9 / 4 * 0.85):  # *0.85 just to be save
                     np.save(join(output_folder, fname + ".npy"), softmax_pred)
@@ -590,7 +592,7 @@ class nnUNetTrainer(NetworkTrainer):
         job_name = self.experiment_name
         _ = aggregate_scores(pred_gt_tuples, labels=list(range(self.num_classes)),
                              json_output_file=join(output_folder, "summary.json"),
-                             json_name=job_name + " val tiled %s" % (str(use_sliding_window)),
+                             json_name=job_name + " val tiled %s" % (str(tiled)),
                              json_author="Fabian",
                              json_task=task, num_threads=default_num_threads)
 
@@ -625,8 +627,6 @@ class nnUNetTrainer(NetworkTrainer):
                 print("Could not copy gt nifti file %s into folder %s" % (f, gt_nifti_folder))
                 if e is not None:
                     raise e
-
-        self.network.train(current_mode)
 
     def run_online_evaluation(self, output, target):
         with torch.no_grad():

@@ -1,0 +1,15 @@
+{
+    "all_in_gpu": false,
+    "debug": false,
+    "do_mirroring": true,
+    "force_separate_z": null,
+    "interpolation_order": 3,
+    "interpolation_order_z": 0,
+    "overwrite": true,
+    "save_softmax": false,
+    "step": 2,
+    "tiled": true,
+    "use_gaussian": true,
+    "use_train_mode": false,
+    "validation_folder_name": "validation_raw"
+}

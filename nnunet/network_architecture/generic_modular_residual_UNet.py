@@ -161,7 +161,6 @@ class ResidualUNetDecoder(nn.Module):
 
         if num_blocks_per_stage is None:
             num_blocks_per_stage = previous.num_blocks_per_stage[:-1][::-1]
-
         assert len(num_blocks_per_stage) == len(previous.num_blocks_per_stage) - 1
 
         self.stage_pool_kernel_size = previous_stage_pool_kernel_size

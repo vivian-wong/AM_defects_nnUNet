@@ -14,19 +14,12 @@
 
 from collections import OrderedDict
 from time import sleep
-from typing import Tuple
 
 import numpy as np
 import torch
 import torch.distributed as dist
-
-try:
-    from apex import amp
-    from apex.parallel import DistributedDataParallel as DDP
-except ImportError:
-    amp = None
-    DDP = None
-
+from apex import amp
+from apex.parallel import DistributedDataParallel as DDP
 from batchgenerators.utilities.file_and_folder_operations import maybe_mkdir_p, join, subfiles, isfile
 from nnunet.network_architecture.generic_UNet import Generic_UNet
 from nnunet.network_architecture.initialization import InitWeights_He
@@ -58,12 +51,10 @@ class nnUNetTrainerV2_DDP(nnUNetTrainerV2):
         self.distribute_batch_size = distribute_batch_size
         np.random.seed(local_rank)
         torch.manual_seed(local_rank)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(local_rank)
+        torch.cuda.manual_seed_all(local_rank)
         self.local_rank = local_rank
 
-        if torch.cuda.is_available():
-            torch.cuda.set_device(local_rank)
+        torch.cuda.set_device(local_rank)
         dist.init_process_group(backend='nccl', init_method='env://')
 
         self.val_loss_ma_alpha = 0.95
@@ -154,12 +145,10 @@ class nnUNetTrainerV2_DDP(nnUNetTrainerV2):
         net_nonlin_kwargs = {'negative_slope': 1e-2, 'inplace': True}
         self.network = Generic_UNet(self.num_input_channels, self.base_num_features, self.num_classes,
                                     len(self.net_num_pool_op_kernel_sizes),
-                                    self.conv_per_stage, 2, conv_op, norm_op, norm_op_kwargs, dropout_op,
-                                    dropout_op_kwargs,
+                                    self.conv_per_stage, 2, conv_op, norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs,
                                     net_nonlin, net_nonlin_kwargs, True, False, lambda x: x, InitWeights_He(1e-2),
                                     self.net_num_pool_op_kernel_sizes, self.net_conv_kernel_sizes, False, True, True)
-        if torch.cuda.is_available():
-            self.network.cuda()
+        self.network.cuda()
         self.network.inference_apply_nonlin = softmax_helper
 
     def process_plans(self, plans):
@@ -236,8 +225,7 @@ class nnUNetTrainerV2_DDP(nnUNetTrainerV2):
                                                                     self.data_aug_params,
                                                                     deep_supervision_scales=self.deep_supervision_scales,
                                                                     seeds_train=seeds_train,
-                                                                    seeds_val=seeds_val,
-                                                                    pin_memory=self.pin_memory)
+                                                                    seeds_val=seeds_val)
                 self.print_to_log_file("TRAINING KEYS:\n %s" % (str(self.dataset_tr.keys())),
                                        also_print_to_console=False)
                 self.print_to_log_file("VALIDATION KEYS:\n %s" % (str(self.dataset_val.keys())),
@@ -262,9 +250,8 @@ class nnUNetTrainerV2_DDP(nnUNetTrainerV2):
         data = maybe_to_torch(data)
         target = maybe_to_torch(target)
 
-        if torch.cuda.is_available():
-            data = to_cuda(data, gpu_id=None)
-            target = to_cuda(target, gpu_id=None)
+        data = to_cuda(data, gpu_id=None)
+        target = to_cuda(target, gpu_id=None)
 
         self.optimizer.zero_grad()
 
@@ -338,7 +325,7 @@ class nnUNetTrainerV2_DDP(nnUNetTrainerV2):
         del target
 
         if do_backprop:
-            if not self.fp16 or amp is None or not torch.cuda.is_available():
+            if not self.fp16 or amp is None:
                 total_loss.backward()
             else:
                 with amp.scale_loss(total_loss, self.optimizer) as scaled_loss:
@@ -374,7 +361,7 @@ class nnUNetTrainerV2_DDP(nnUNetTrainerV2):
         net.do_ds = ds
         return ret
 
-    def validate(self, do_mirroring: bool = True, use_sliding_window: bool = True, step_size: float = 0.5,
+    def validate(self, do_mirroring: bool = True, use_train_mode: bool = False, tiled: bool = True, step: int = 2,
                  save_softmax: bool = True, use_gaussian: bool = True, overwrite: bool = True,
                  validation_folder_name: str = 'validation_raw', debug: bool = False, all_in_gpu: bool = False,
                  force_separate_z: bool = None, interpolation_order: int = 3, interpolation_order_z=0):
@@ -385,30 +372,32 @@ class nnUNetTrainerV2_DDP(nnUNetTrainerV2):
                 net = self.network
             ds = net.do_ds
             net.do_ds = False
-            ret = nnUNetTrainer.validate(self, do_mirroring, use_sliding_window, step_size, save_softmax, use_gaussian,
+            ret = nnUNetTrainer.validate(self, do_mirroring, use_train_mode, tiled, step, save_softmax, use_gaussian,
                                          overwrite, validation_folder_name, debug, all_in_gpu,
                                          force_separate_z=force_separate_z, interpolation_order=interpolation_order,
                                          interpolation_order_z=interpolation_order_z)
             net.do_ds = ds
             return ret
 
-    def predict_preprocessed_data_return_seg_and_softmax(self, data: np.ndarray, do_mirroring: bool = True,
-                                                         mirror_axes: Tuple[int] = None,
-                                                         use_sliding_window: bool = True,
-                                                         step_size: float = 0.5, use_gaussian: bool = True,
-                                                         pad_border_mode: str = 'constant', pad_kwargs: dict = None,
-                                                         all_in_gpu: bool = True,
-                                                         verbose: bool = True) -> Tuple[np.ndarray, np.ndarray]:
-        if pad_border_mode == 'constant' and pad_kwargs is None:
-            pad_kwargs = {'constant_values': 0}
-
-        if do_mirroring and mirror_axes is None:
-            mirror_axes = self.data_aug_params['mirror_axes']
-
-        if do_mirroring:
-            assert self.data_aug_params["do_mirror"], "Cannot do mirroring as test time augmentation when training " \
-                                                      "was done without mirroring"
-
+    def predict_preprocessed_data_return_softmax(self, data, do_mirroring, num_repeats, use_train_mode, batch_size,
+                                                 mirror_axes, tiled, tile_in_z, step, min_size, use_gaussian,
+                                                 all_in_gpu=False):
+        """
+        Don't use this. If you need softmax output, use preprocess_predict_nifti and set softmax_output_file.
+        :param data:
+        :param do_mirroring:
+        :param num_repeats:
+        :param use_train_mode:
+        :param batch_size:
+        :param mirror_axes:
+        :param tiled:
+        :param tile_in_z:
+        :param step:
+        :param min_size:
+        :param use_gaussian:
+        :param use_temporal:
+        :return:
+        """
         valid = list((SegmentationNetwork, nn.DataParallel, DDP))
         assert isinstance(self.network, tuple(valid))
         if isinstance(self.network, DDP):
@@ -417,9 +406,10 @@ class nnUNetTrainerV2_DDP(nnUNetTrainerV2):
             net = self.network
         ds = net.do_ds
         net.do_ds = False
-        ret = net.predict_3D(data, do_mirroring, mirror_axes, use_sliding_window, step_size, self.patch_size,
-                             self.regions_class_order, use_gaussian, pad_border_mode, pad_kwargs,
-                             all_in_gpu, verbose)
+        ret = net.predict_3D(data, do_mirroring, num_repeats, use_train_mode, batch_size, mirror_axes,
+                             tiled, tile_in_z, step, min_size, use_gaussian=use_gaussian,
+                             pad_border_mode=self.inference_pad_border_mode,
+                             pad_kwargs=self.inference_pad_kwargs, all_in_gpu=all_in_gpu)[2]
         net.do_ds = ds
         return ret
 

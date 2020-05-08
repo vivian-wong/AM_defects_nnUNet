@@ -82,7 +82,7 @@ default_3D_augmentation_params = {
     "additive_brightness_mu": 0.0,
     "additive_brightness_sigma": 0.1,
 
-    "num_threads": 12,
+    "num_threads": 6,
     "num_cached_per_thread": 1,
 }
 

@@ -114,8 +114,7 @@ class nnUNetTrainerV2_noDeepSupervision(nnUNetTrainerV2):
                                                                         'patch_size_for_spatialtransform'],
                                                                     self.data_aug_params,
                                                                     deep_supervision_scales=self.deep_supervision_scales,
-                                                                    classes=None,
-                                                                    pin_memory=self.pin_memory)
+                                                                    classes=None, pin_memory=True)
 
                 self.print_to_log_file("TRAINING KEYS:\n %s" % (str(self.dataset_tr.keys())),
                                        also_print_to_console=False)
@@ -156,8 +155,7 @@ class nnUNetTrainerV2_noDeepSupervision(nnUNetTrainerV2):
                                     self.conv_per_stage, 2, conv_op, norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs,
                                     net_nonlin, net_nonlin_kwargs, False, False, lambda x: x, InitWeights_He(1e-2),
                                     self.net_num_pool_op_kernel_sizes, self.net_conv_kernel_sizes, False, True, True)
-        if torch.cuda.is_available():
-            self.network.cuda()
+        self.network.cuda()
         self.network.inference_apply_nonlin = softmax_helper
 
     def run_online_evaluation(self, output, target):

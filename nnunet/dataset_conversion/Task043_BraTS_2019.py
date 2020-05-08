@@ -22,17 +22,12 @@ import SimpleITK as sitk
 import shutil
 
 
-def copy_BraTS_segmentation_and_convert_labels(in_file, out_file):
+def copy_nifti_modify_labels(in_file, out_file):
     # use this for segmentation only!!!
     # nnUNet wants the labels to be continuous. BraTS is 0, 1, 2, 4 -> we make that into 0, 1, 2, 3
+    # no sanity checks -> #Yolo
     img = sitk.ReadImage(in_file)
     img_npy = sitk.GetArrayFromImage(img)
-
-    uniques = np.unique(img_npy)
-    for u in uniques:
-        if u not in [0, 1, 2, 4]:
-            raise RuntimeError('unexpected label')
-
     seg_new = np.zeros_like(img_npy)
     seg_new[img_npy == 4] = 3
     seg_new[img_npy == 2] = 1
@@ -48,17 +43,13 @@ if __name__ == "__main__":
     """
 
     task_name = "Task043_BraTS2019"
-    downloaded_data_dir = "/home/sdp/MLPERF/Brats2019_DATA/MICCAI_BraTS_2019_Data_Training"
+    downloaded_data_dir = "/home/fabian/data/BraTS2019/MICCAI_BraTS_2019_Data_Training"
 
     target_base = join(nnUNet_raw_data, task_name)
     target_imagesTr = join(target_base, "imagesTr")
-    target_imagesVal = join(target_base, "imagesVal")
-    target_imagesTs = join(target_base, "imagesTs")
     target_labelsTr = join(target_base, "labelsTr")
 
     maybe_mkdir_p(target_imagesTr)
-    maybe_mkdir_p(target_imagesVal)
-    maybe_mkdir_p(target_imagesTs)
     maybe_mkdir_p(target_labelsTr)
 
     patient_names = []
@@ -87,7 +78,7 @@ if __name__ == "__main__":
             shutil.copy(t2, join(target_imagesTr, patient_name + "_0002.nii.gz"))
             shutil.copy(flair, join(target_imagesTr, patient_name + "_0003.nii.gz"))
 
-            copy_BraTS_segmentation_and_convert_labels(seg, join(target_labelsTr, patient_name + ".nii.gz"))
+            copy_nifti_modify_labels(seg, join(target_labelsTr, patient_name + ".nii.gz"))
 
 
     json_dict = OrderedDict()
@@ -116,49 +107,3 @@ if __name__ == "__main__":
     json_dict['test'] = []
 
     save_json(json_dict, join(target_base, "dataset.json"))
-
-    downloaded_data_dir = "/home/sdp/MLPERF/Brats2019_DATA/MICCAI_BraTS_2019_Data_Validation"
-
-    for p in subdirs(downloaded_data_dir, join=False):
-        patdir = join(downloaded_data_dir, p)
-        patient_name = p
-        t1 = join(patdir, p + "_t1.nii.gz")
-        t1c = join(patdir, p + "_t1ce.nii.gz")
-        t2 = join(patdir, p + "_t2.nii.gz")
-        flair = join(patdir, p + "_flair.nii.gz")
-
-        assert all([
-            isfile(t1),
-            isfile(t1c),
-            isfile(t2),
-            isfile(flair),
-        ]), "%s" % patient_name
-
-        shutil.copy(t1, join(target_imagesVal, patient_name + "_0000.nii.gz"))
-        shutil.copy(t1c, join(target_imagesVal, patient_name + "_0001.nii.gz"))
-        shutil.copy(t2, join(target_imagesVal, patient_name + "_0002.nii.gz"))
-        shutil.copy(flair, join(target_imagesVal, patient_name + "_0003.nii.gz"))
-
-    """
-    #I dont have the testing data
-    downloaded_data_dir = "/home/fabian/Downloads/BraTS2018_train_val_test_data/MICCAI_BraTS_2018_Data_Testing_FIsensee"
-
-    for p in subdirs(downloaded_data_dir, join=False):
-        patdir = join(downloaded_data_dir, p)
-        patient_name = p
-        t1 = join(patdir, p + "_t1.nii.gz")
-        t1c = join(patdir, p + "_t1ce.nii.gz")
-        t2 = join(patdir, p + "_t2.nii.gz")
-        flair = join(patdir, p + "_flair.nii.gz")
-
-        assert all([
-            isfile(t1),
-            isfile(t1c),
-            isfile(t2),
-            isfile(flair),
-        ]), "%s" % patient_name
-
-        shutil.copy(t1, join(target_imagesTs, patient_name + "_0000.nii.gz"))
-        shutil.copy(t1c, join(target_imagesTs, patient_name + "_0001.nii.gz"))
-        shutil.copy(t2, join(target_imagesTs, patient_name + "_0002.nii.gz"))
-        shutil.copy(flair, join(target_imagesTs, patient_name + "_0003.nii.gz"))"""

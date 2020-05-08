@@ -14,13 +14,9 @@
 
 
 from _warnings import warn
-from typing import Tuple
-
 import matplotlib
 from batchgenerators.utilities.file_and_folder_operations import *
-from nnunet.network_architecture.neural_network import SegmentationNetwork
 from sklearn.model_selection import KFold
-from torch import nn
 from torch.optim.lr_scheduler import _LRScheduler
 
 matplotlib.use("agg")
@@ -34,7 +30,6 @@ from collections import OrderedDict
 import torch.backends.cudnn as cudnn
 from abc import abstractmethod
 from datetime import datetime
-from tqdm import trange
 
 try:
     from apex import amp
@@ -65,8 +60,7 @@ class NetworkTrainer(object):
         if deterministic:
             np.random.seed(12345)
             torch.manual_seed(12345)
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed_all(12345)
+            torch.cuda.manual_seed_all(12345)
             cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
         else:
@@ -74,7 +68,7 @@ class NetworkTrainer(object):
             torch.backends.cudnn.benchmark = True
 
         ################# SET THESE IN self.initialize() ###################################
-        self.network: Tuple[SegmentationNetwork, nn.DataParallel] = None
+        self.network = None
         self.optimizer = None
         self.lr_scheduler = None
         self.tr_gen = self.val_gen = None
@@ -99,7 +93,8 @@ class NetworkTrainer(object):
         self.train_loss_MA_eps = 5e-4  # new MA must be at least this much better (smaller)
         self.save_every = 50
         self.save_latest_only = True
-        self.max_num_epochs = 1000
+        self.max_num_epochs = 50
+#         self.max_num_epochs = 1000
         self.num_batches_per_epoch = 250
         self.num_val_batches_per_epoch = 50
         self.also_val_in_tr_mode = False
@@ -119,10 +114,6 @@ class NetworkTrainer(object):
         self.log_file = None
         self.deterministic = deterministic
 
-        self.use_progress_bar = False
-        if 'nnunet_use_progress_bar' in os.environ.keys():
-            self.use_progress_bar = bool(int(os.environ['nnunet_use_progress_bar']))
-
     @abstractmethod
     def initialize(self, training=True):
         """
@@ -131,9 +122,9 @@ class NetworkTrainer(object):
         modify self.output_folder if you are doing cross-validation (one folder per fold)
 
         set self.tr_gen and self.val_gen
-
+        
         call self.initialize_network and self.initialize_optimizer_and_scheduler (important!)
-
+        
         finally set self.was_initialized to True
         :param training:
         :return:
@@ -153,7 +144,7 @@ class NetworkTrainer(object):
             self.print_to_log_file("Creating new split...")
             splits = []
             all_keys_sorted = np.sort(list(self.dataset.keys()))
-            kfold = KFold(n_splits=5, shuffle=True, random_state=12345)
+            kfold = KFold(n_splits=4, shuffle=True, random_state=12345)
             for i, (train_idx, test_idx) in enumerate(kfold.split(all_keys_sorted)):
                 train_keys = np.array(all_keys_sorted)[train_idx]
                 test_keys = np.array(all_keys_sorted)[test_idx]
@@ -169,10 +160,10 @@ class NetworkTrainer(object):
         else:
             tr_keys = splits[self.fold]['train']
             val_keys = splits[self.fold]['val']
-
+        
         tr_keys.sort()
         val_keys.sort()
-
+        
         self.dataset_tr = OrderedDict()
         for i in tr_keys:
             self.dataset_tr[i] = self.dataset[i]
@@ -204,7 +195,7 @@ class NetworkTrainer(object):
 
             if len(self.all_val_losses_tr_mode) > 0:
                 ax.plot(x_values, self.all_val_losses_tr_mode, color='g', ls='-', label="loss_val, train=True")
-            if len(self.all_val_eval_metrics) == len(x_values):
+            if len(self.all_val_eval_metrics) == len(self.all_val_losses):
                 ax2.plot(x_values, self.all_val_eval_metrics, color='g', ls='--', label="evaluation metric")
 
             ax.set_xlabel("epoch")
@@ -385,7 +376,7 @@ class NetworkTrainer(object):
 
     def _maybe_init_amp(self):
         # we use fp16 for training only, not inference
-        if self.fp16 and torch.cuda.is_available():
+        if self.fp16:
             if not self.amp_initialized:
                 if amp is not None:
                     self.network, self.optimizer = amp.initialize(self.network, self.optimizer, opt_level="O1")
@@ -406,8 +397,7 @@ class NetworkTrainer(object):
         _ = self.tr_gen.next()
         _ = self.val_gen.next()
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
         self._maybe_init_amp()
 
@@ -430,20 +420,9 @@ class NetworkTrainer(object):
 
             # train one epoch
             self.network.train()
-
-            if self.use_progress_bar:
-                with trange(self.num_batches_per_epoch) as tbar:
-                    for b in tbar:
-                        tbar.set_description("Epoch {}/{}".format(self.epoch+1, self.max_num_epochs))
-
-                        l = self.run_iteration(self.tr_gen, True)
-
-                        tbar.set_postfix(loss=l)
-                        train_losses_epoch.append(l)
-            else:
-                for _ in range(self.num_batches_per_epoch):
-                    l = self.run_iteration(self.tr_gen, True)
-                    train_losses_epoch.append(l)
+            for b in range(self.num_batches_per_epoch):
+                l = self.run_iteration(self.tr_gen, True)
+                train_losses_epoch.append(l)
 
             self.all_tr_losses.append(np.mean(train_losses_epoch))
             self.print_to_log_file("train loss : %.4f" % self.all_tr_losses[-1])
@@ -468,12 +447,11 @@ class NetworkTrainer(object):
                     self.all_val_losses_tr_mode.append(np.mean(val_losses))
                     self.print_to_log_file("validation loss (train=True): %.4f" % self.all_val_losses_tr_mode[-1])
 
+            epoch_end_time = time()
+
             self.update_train_loss_MA()  # needed for lr scheduler and stopping of training
 
             continue_training = self.on_epoch_end()
-
-            epoch_end_time = time()
-
             if not continue_training:
                 # allows for early stopping
                 break
@@ -528,8 +506,8 @@ class NetworkTrainer(object):
         else:
             if len(self.all_val_eval_metrics) == 0:
                 """
-                We here use alpha * old - (1 - alpha) * new because new in this case is the vlaidation loss and lower
-                is better, so we need to negate it.
+                We here use alpha * old - (1 - alpha) * new because new in this case is the vlaidation loss and lower 
+                is better, so we need to negate it. 
                 """
                 self.val_eval_criterion_MA = self.val_eval_criterion_alpha * self.val_eval_criterion_MA - (
                         1 - self.val_eval_criterion_alpha) * \
@@ -623,9 +601,8 @@ class NetworkTrainer(object):
         if not isinstance(target, torch.Tensor):
             target = torch.from_numpy(target).float()
 
-        if torch.cuda.is_available():
-            data = data.cuda(non_blocking=True)
-            target = target.cuda(non_blocking=True)
+        data = data.cuda(non_blocking=True)
+        target = target.cuda(non_blocking=True)
 
         self.optimizer.zero_grad()
         output = self.network(data)
@@ -638,7 +615,7 @@ class NetworkTrainer(object):
         del target
 
         if do_backprop:
-            if not self.fp16 or amp is None or not torch.cuda.is_available():
+            if not self.fp16 or amp is None:
                 l.backward()
             else:
                 with amp.scale_loss(l, self.optimizer) as scaled_loss:

@@ -1,0 +1,78 @@
+{
+    "author": "Fabian",
+    "description": "",
+    "id": "3f2aa30d2c7c",
+    "name": "nnUNetTrainerV2_ResencUNet val tiled True",
+    "results": {
+        "all": [
+            {
+                "0": {
+                    "Accuracy": 0.9637745302081229,
+                    "Dice": 0.9757694409741638,
+                    "False Discovery Rate": 0.04655025792529255,
+                    "False Negative Rate": 0.0008408292265850159,
+                    "False Omission Rate": 0.0026121671460215493,
+                    "False Positive Rate": 0.13190343371902524,
+                    "Jaccard": 0.9526853425484936,
+                    "Negative Predictive Value": 0.9973878328539785,
+                    "Precision": 0.9534497420747075,
+                    "Recall": 0.999159170773415,
+                    "Total Positives Reference": 650313979,
+                    "Total Positives Test": 681490746,
+                    "True Negative Rate": 0.8680965662809748
+                },
+                "1": {
+                    "Accuracy": 0.9637745302081229,
+                    "Dice": 0.9282617998332834,
+                    "False Discovery Rate": 0.0026121671460215268,
+                    "False Negative Rate": 0.13190343371902524,
+                    "False Omission Rate": 0.0465502579252925,
+                    "False Positive Rate": 0.0008408292265850159,
+                    "Jaccard": 0.866127380445043,
+                    "Negative Predictive Value": 0.9534497420747075,
+                    "Precision": 0.9973878328539785,
+                    "Recall": 0.8680965662809748,
+                    "Total Positives Reference": 240506021,
+                    "Total Positives Test": 209329254,
+                    "True Negative Rate": 0.999159170773415
+                },
+                "reference": "/home/vivianwong/nnUNet/preprocessed/Task101_AM/gt_segmentations/S1S_2.nii.gz",
+                "test": "/home/vivianwong/nnUNet/results/nnUNet/3d_fullres/Task101_AM/nnUNetTrainerV2_ResencUNet__nnUNetPlans_FabiansResUNet_v2.1/fold_0/validation_raw/S1S_2.nii.gz"
+            }
+        ],
+        "mean": {
+            "0": {
+                "Accuracy": 0.9637745302081229,
+                "Dice": 0.9757694409741638,
+                "False Discovery Rate": 0.04655025792529255,
+                "False Negative Rate": 0.0008408292265850159,
+                "False Omission Rate": 0.0026121671460215493,
+                "False Positive Rate": 0.13190343371902524,
+                "Jaccard": 0.9526853425484936,
+                "Negative Predictive Value": 0.9973878328539785,
+                "Precision": 0.9534497420747075,
+                "Recall": 0.999159170773415,
+                "Total Positives Reference": 650313979.0,
+                "Total Positives Test": 681490746.0,
+                "True Negative Rate": 0.8680965662809748
+            },
+            "1": {
+                "Accuracy": 0.9637745302081229,
+                "Dice": 0.9282617998332834,
+                "False Discovery Rate": 0.0026121671460215268,
+                "False Negative Rate": 0.13190343371902524,
+                "False Omission Rate": 0.0465502579252925,
+                "False Positive Rate": 0.0008408292265850159,
+                "Jaccard": 0.866127380445043,
+                "Negative Predictive Value": 0.9534497420747075,
+                "Precision": 0.9973878328539785,
+                "Recall": 0.8680965662809748,
+                "Total Positives Reference": 240506021.0,
+                "Total Positives Test": 209329254.0,
+                "True Negative Rate": 0.999159170773415
+            }
+        }
+    },
+    "task": "Task101_AM",
+    "timestamp": "2020-05-05 07:28:16.845517"
+}

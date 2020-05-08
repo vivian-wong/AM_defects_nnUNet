@@ -108,8 +108,7 @@ class nnUNetTrainerV2_DP(nnUNetTrainerV2):
                                                                     self.data_aug_params[
                                                                         'patch_size_for_spatialtransform'],
                                                                     self.data_aug_params,
-                                                                    deep_supervision_scales=self.deep_supervision_scales,
-                                                                    pin_memory=self.pin_memory)
+                                                                    deep_supervision_scales=self.deep_supervision_scales)
                 self.print_to_log_file("TRAINING KEYS:\n %s" % (str(self.dataset_tr.keys())),
                                        also_print_to_console=False)
                 self.print_to_log_file("VALIDATION KEYS:\n %s" % (str(self.dataset_val.keys())),
@@ -148,8 +147,7 @@ class nnUNetTrainerV2_DP(nnUNetTrainerV2):
                                     self.conv_per_stage, 2, conv_op, norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs,
                                     net_nonlin, net_nonlin_kwargs, True, False, InitWeights_He(1e-2),
                                     self.net_num_pool_op_kernel_sizes, self.net_conv_kernel_sizes, False, True, True)
-        if torch.cuda.is_available():
-            self.network.cuda()
+        self.network.cuda()
         self.network.inference_apply_nonlin = softmax_helper
 
     def initialize_optimizer_and_scheduler(self):
@@ -180,9 +178,8 @@ class nnUNetTrainerV2_DP(nnUNetTrainerV2):
         data = maybe_to_torch(data)
         target = maybe_to_torch(target)
 
-        if torch.cuda.is_available():
-            data = to_cuda(data)
-            target = to_cuda(target)
+        data = to_cuda(data)
+        target = to_cuda(target)
 
         self.optimizer.zero_grad()
 
@@ -232,7 +229,7 @@ class nnUNetTrainerV2_DP(nnUNetTrainerV2):
         ###########
 
         if do_backprop:
-            if not self.fp16 or amp is None or not torch.cuda.is_available():
+            if not self.fp16 or amp is None:
                 loss.backward()
             else:
                 with amp.scale_loss(loss, self.optimizer) as scaled_loss:

@@ -1,0 +1,48 @@
+{
+    "author": "Fabian",
+    "description": "",
+    "id": "5c84e35d1b52",
+    "name": "",
+    "results": {
+        "all": [
+            {
+                "1": {
+                    "Accuracy": 0.9637745302081229,
+                    "Dice": 0.9282617998332834,
+                    "False Discovery Rate": 0.0026121671460215268,
+                    "False Negative Rate": 0.13190343371902524,
+                    "False Omission Rate": 0.0465502579252925,
+                    "False Positive Rate": 0.0008408292265850159,
+                    "Jaccard": 0.866127380445043,
+                    "Negative Predictive Value": 0.9534497420747075,
+                    "Precision": 0.9973878328539785,
+                    "Recall": 0.8680965662809748,
+                    "Total Positives Reference": 240506021,
+                    "Total Positives Test": 209329254,
+                    "True Negative Rate": 0.999159170773415
+                },
+                "reference": "/home/vivianwong/nnUNet/preprocessed/Task101_AM/gt_segmentations/S1S_2.nii.gz",
+                "test": "/home/vivianwong/nnUNet/results/nnUNet/3d_fullres/Task101_AM/nnUNetTrainerV2_ResencUNet__nnUNetPlans_FabiansResUNet_v2.1/fold_0/validation_raw_postprocessed/S1S_2.nii.gz"
+            }
+        ],
+        "mean": {
+            "1": {
+                "Accuracy": 0.9637745302081229,
+                "Dice": 0.9282617998332834,
+                "False Discovery Rate": 0.0026121671460215268,
+                "False Negative Rate": 0.13190343371902524,
+                "False Omission Rate": 0.0465502579252925,
+                "False Positive Rate": 0.0008408292265850159,
+                "Jaccard": 0.866127380445043,
+                "Negative Predictive Value": 0.9534497420747075,
+                "Precision": 0.9973878328539785,
+                "Recall": 0.8680965662809748,
+                "Total Positives Reference": 240506021.0,
+                "Total Positives Test": 209329254.0,
+                "True Negative Rate": 0.999159170773415
+            }
+        }
+    },
+    "task": "",
+    "timestamp": "2020-05-05 12:45:45.530061"
+}

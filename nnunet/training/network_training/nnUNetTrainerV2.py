@@ -14,8 +14,6 @@
 
 
 from collections import OrderedDict
-from typing import Tuple
-
 import numpy as np
 import torch
 from nnunet.training.loss_functions.deep_supervision import MultipleOutputLoss2
@@ -33,6 +31,7 @@ from torch import nn
 from torch.nn.utils import clip_grad_norm_
 from nnunet.training.learning_rate.poly_lr import poly_lr
 from batchgenerators.utilities.file_and_folder_operations import *
+from torchsummary import summary
 
 try:
     from apex import amp
@@ -53,8 +52,6 @@ class nnUNetTrainerV2(nnUNetTrainer):
         self.initial_lr = 1e-2
         self.deep_supervision_scales = None
         self.ds_loss_weights = None
-
-        self.pin_memory = True
 
     def initialize(self, training=True, force_load_plans=False):
         """
@@ -85,7 +82,7 @@ class nnUNetTrainerV2(nnUNetTrainer):
             weights = np.array([1 / (2 ** i) for i in range(net_numpool)])
 
             # we don't use the lowest 2 outputs. Normalize weights so that they sum to 1
-            mask = np.array([True] + [True if i < net_numpool - 1 else False for i in range(1, net_numpool)])
+            mask = np.array([True if i < net_numpool - 1 else False for i in range(net_numpool)])
             weights[~mask] = 0
             weights = weights / weights.sum()
             self.ds_loss_weights = weights
@@ -106,14 +103,11 @@ class nnUNetTrainerV2(nnUNetTrainer):
                         "INFO: Not unpacking data! Training may be slow due to that. Pray you are not using 2d or you "
                         "will wait all winter for your model to finish!")
 
-                self.tr_gen, self.val_gen = get_moreDA_augmentation(
-                    self.dl_tr, self.dl_val,
-                    self.data_aug_params[
-                        'patch_size_for_spatialtransform'],
-                    self.data_aug_params,
-                    deep_supervision_scales=self.deep_supervision_scales,
-                    pin_memory=self.pin_memory
-                )
+                self.tr_gen, self.val_gen = get_moreDA_augmentation(self.dl_tr, self.dl_val,
+                                                                    self.data_aug_params[
+                                                                        'patch_size_for_spatialtransform'],
+                                                                    self.data_aug_params,
+                                                                    deep_supervision_scales=self.deep_supervision_scales)
                 self.print_to_log_file("TRAINING KEYS:\n %s" % (str(self.dataset_tr.keys())),
                                        also_print_to_console=False)
                 self.print_to_log_file("VALIDATION KEYS:\n %s" % (str(self.dataset_val.keys())),
@@ -156,12 +150,15 @@ class nnUNetTrainerV2(nnUNetTrainer):
         net_nonlin_kwargs = {'negative_slope': 1e-2, 'inplace': True}
         self.network = Generic_UNet(self.num_input_channels, self.base_num_features, self.num_classes,
                                     len(self.net_num_pool_op_kernel_sizes),
-                                    self.conv_per_stage, 2, conv_op, norm_op, norm_op_kwargs, dropout_op,
-                                    dropout_op_kwargs,
+                                    self.conv_per_stage, 2, conv_op, norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs,
                                     net_nonlin, net_nonlin_kwargs, True, False, lambda x: x, InitWeights_He(1e-2),
                                     self.net_num_pool_op_kernel_sizes, self.net_conv_kernel_sizes, False, True, True)
-        if torch.cuda.is_available():
-            self.network.cuda()
+        self.network.cuda()
+        #vivian added
+#         print(self.num_input_channels, self.base_num_features, self.num_classes)
+# #         summary(self.network, (self.num_input_channels,128,128,128))
+#         summary(self.network, (self.num_input_channels,1024,1024))
+        
         self.network.inference_apply_nonlin = softmax_helper
 
     def initialize_optimizer_and_scheduler(self):
@@ -182,8 +179,8 @@ class nnUNetTrainerV2(nnUNetTrainer):
         output = output[0]
         return super().run_online_evaluation(output, target)
 
-    def validate(self, do_mirroring: bool = True, use_sliding_window: bool = True,
-                 step_size: float = 0.5, save_softmax: bool = True, use_gaussian: bool = True, overwrite: bool = True,
+    def validate(self, do_mirroring: bool = True, use_train_mode: bool = False, tiled: bool = True, step: int = 2,
+                 save_softmax: bool = True, use_gaussian: bool = True, overwrite: bool = True,
                  validation_folder_name: str = 'validation_raw', debug: bool = False, all_in_gpu: bool = False,
                  force_separate_z: bool = None, interpolation_order: int = 3, interpolation_order_z=0):
         """
@@ -191,28 +188,50 @@ class nnUNetTrainerV2(nnUNetTrainer):
         """
         ds = self.network.do_ds
         self.network.do_ds = False
-        ret = super().validate(do_mirroring, use_sliding_window, step_size, save_softmax, use_gaussian,
+        ret = super().validate(do_mirroring, use_train_mode, tiled, step, save_softmax, use_gaussian,
                                overwrite, validation_folder_name, debug, all_in_gpu,
                                force_separate_z=force_separate_z, interpolation_order=interpolation_order,
                                interpolation_order_z=interpolation_order_z)
         self.network.do_ds = ds
         return ret
 
-    def predict_preprocessed_data_return_seg_and_softmax(self, data: np.ndarray, do_mirroring: bool = True,
-                                                         mirror_axes: Tuple[int] = None,
-                                                         use_sliding_window: bool = True,
-                                                         step_size: float = 0.5, use_gaussian: bool = True,
-                                                         pad_border_mode: str = 'constant', pad_kwargs: dict = None,
-                                                         all_in_gpu: bool = True,
-                                                         verbose: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+    def predict_preprocessed_data_return_softmax(self, data, do_mirroring, num_repeats, use_train_mode, batch_size,
+                                                 mirror_axes, tiled, tile_in_z, step, min_size, use_gaussian,
+                                                 all_in_gpu=False):
         """
         We need to wrap this because we need to enforce self.network.do_ds = False for prediction
+        :param data:
+        :param do_mirroring:
+        :param num_repeats:
+        :param use_train_mode:
+        :param batch_size:
+        :param mirror_axes:
+        :param tiled:
+        :param tile_in_z:
+        :param step:
+        :param min_size:
+        :param use_gaussian:
+        :return:
         """
         ds = self.network.do_ds
         self.network.do_ds = False
-        ret = super().predict_preprocessed_data_return_seg_and_softmax(data, do_mirroring, mirror_axes,
-                                                                       use_sliding_window, step_size, use_gaussian,
-                                                                       pad_border_mode, pad_kwargs, all_in_gpu, verbose)
+        ret = super().predict_preprocessed_data_return_softmax(data, do_mirroring, num_repeats, use_train_mode,
+                                                               batch_size,
+                                                               mirror_axes, tiled, tile_in_z, step, min_size,
+                                                               use_gaussian, all_in_gpu)
+        self.network.do_ds = ds
+        return ret
+
+    def predict_preprocessed_data_return_softmax_and_seg(self, data, do_mirroring, num_repeats, use_train_mode,
+                                                         batch_size,
+                                                         mirror_axes, tiled, tile_in_z, step, min_size, use_gaussian,
+                                                         all_in_gpu=False):
+        ds = self.network.do_ds
+        self.network.do_ds = False
+        ret = super().predict_preprocessed_data_return_softmax_and_seg(data, do_mirroring, num_repeats, use_train_mode,
+                                                                       batch_size,
+                                                                       mirror_axes, tiled, tile_in_z, step, min_size,
+                                                                       use_gaussian, all_in_gpu)
         self.network.do_ds = ds
         return ret
 
@@ -232,9 +251,8 @@ class nnUNetTrainerV2(nnUNetTrainer):
         data = maybe_to_torch(data)
         target = maybe_to_torch(target)
 
-        if torch.cuda.is_available():
-            data = to_cuda(data)
-            target = to_cuda(target)
+        data = to_cuda(data)
+        target = to_cuda(target)
 
         self.optimizer.zero_grad()
 
@@ -248,14 +266,13 @@ class nnUNetTrainerV2(nnUNetTrainer):
         del target
 
         if do_backprop:
-            if not self.fp16 or amp is None or not torch.cuda.is_available():
+            if not self.fp16 or amp is None:
                 loss.backward()
             else:
                 with amp.scale_loss(loss, self.optimizer) as scaled_loss:
                     scaled_loss.backward()
             _ = clip_grad_norm_(self.network.parameters(), 12)
             self.optimizer.step()
-
         return loss.detach().cpu().numpy()
 
     def do_split(self):

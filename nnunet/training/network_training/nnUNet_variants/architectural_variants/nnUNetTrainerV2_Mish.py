@@ -11,13 +11,9 @@
 #    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
-import torch
 
-try:
-    from apex import amp
-except ImportError:
-    amp = None
 
+from apex import amp
 from nnunet.network_architecture.generic_UNet import Generic_UNet
 from nnunet.network_architecture.initialization import InitWeights_He
 from nnunet.training.network_training.nnUNetTrainerV2 import nnUNetTrainerV2
@@ -47,8 +43,7 @@ class nnUNetTrainerV2_Mish(nnUNetTrainerV2):
                                     self.conv_per_stage, 2, conv_op, norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs,
                                     net_nonlin, net_nonlin_kwargs, True, False, lambda x: x, InitWeights_He(0),
                                     self.net_num_pool_op_kernel_sizes, self.net_conv_kernel_sizes, False, True, True)
-        if torch.cuda.is_available():
-            self.network.cuda()
+        self.network.cuda()
         self.network.inference_apply_nonlin = softmax_helper
 
     def _maybe_init_amp(self):
@@ -58,7 +53,7 @@ class nnUNetTrainerV2_Mish(nnUNetTrainerV2):
         :return:
         """
         # we use fp16 for training only, not inference
-        if self.fp16 and torch.cuda.is_available():
+        if self.fp16:
             if not self.amp_initialized:
                 if amp is not None:
                     self.network, self.optimizer = amp.initialize(self.network, self.optimizer, opt_level="O2")

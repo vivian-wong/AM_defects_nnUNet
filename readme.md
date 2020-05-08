@@ -191,10 +191,6 @@ CONFIGURATION is a string that identifies the requested U-Net configuration. TRA
 model trainer. If you implement custom trainers (nnU-Net as a framework) you can specify your custom trainer here.
 TASK_NAME_OR_ID specifies what dataset should be trained on and FOLD specifies which fold of the 5-fold-crossvalidaton is trained.
 
-nnU-Net stores a checkpoint every 50 epochs. If you need to continue a previous training, just add a `-c` to the 
-training command.
-
- 
 #### 2D U-Net
 For FOLD in [0, 1, 2, 3, 4], run:
 ```bash
@@ -293,10 +289,7 @@ During training it is often useful to watch the progress. We therefore recommend
 progress.png when running the first training. It will be updated after each epoch.
 
 #### Multi GPU training
-
-**Multi GPU training is experimental and NOT RECOMMENDED!**
-
-nnU-Net supports two different multi-GPU implementation: DataParallel (DP) and Distributed Data Parallel (DDP)
+Yes. nnU-Net supports two different multi-GPU implementation: DataParallel (DP) and Distributed Data Parallel (DDP)
 (but currently only on one host!). DDP is faster than DP and should be preferred if possible. However, if you did not 
 install nnunet as a framework (meaning you used the `pip install nnunet` variant), DDP is not available. It requires a 
 different way of calling the correct python script (see below) which we cannot support from our terminal commands.
@@ -334,25 +327,21 @@ all happens on the same system. Again, you can use CUDA_VISIBLE_DEVICES=0,1,2 to
 If you run more than one DDP training on the same system (say you have 4 GPUs and you run two training with 2 GPUs each) 
 you need to specify a different --master_port for each training!
 
-*IMPORTANT!*
-Multi-GPU training results in models that cannot be used for inference easily (as said above, all of this is experimental ;-) ).
-After finishing the training of all folds, run `nnUNet_change_trainer_class` on the folder where the trained model is 
-(see `nnUNet_change_trainer_class -h` for instructions). After that you can run inference.
 
 ### Identifying the best U-Net configuration
 Once all models are trained, use the following 
 command to automatically determine what U-Net configuration(s) to use for test set prediction:
 
 ```bash
-nnUNet_find_best_configuration -m 2d 3d_fullres 3d_lowres 3d_cascade_fullres -t XXX --strict
+nnUNet_find_best_configuration -m 2d 3d_fullres 3d_lowres 3d_cascade_fullres -t XXX --allow_missing_pp --strict
 ```
 
 (all 5 folds need to be completed for all specified configurations!)
 
 On datasets for which the cascade was not configured, use `-m 2d 3d_fullres` instead. If you wish to only explore some 
 subset of the configurations, you can specify that with the `-m` command. We recommend setting the 
-`--strict` (crash if one of the requested configurations is 
-missing) flag. Additional options are available (use `-h` for help).
+`--allow_missing_pp` (determines postprocessing) and `--strict` (crash if one of the requested configurations is 
+missing) flags. Additional options are available (use `-h` for help).
 
 ### Run inference
 Remember that the data located in the input folder must adhere to the format specified 
