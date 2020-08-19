@@ -1,5 +1,10 @@
-# nnU-Net
+# nnU-Net on AM README: 
+To run: 
+1. Go through nnU-Net installation instructions
+2. Run data_cleanup.ipynb to format the AM data into nnU-Net's acceptable format
+3. Run pipeline.ipynb to reproduce results for the paper. 
 
+# nnU-Net README:
 In 3D biomedical image segmentation, dataset properties like imaging modality, image sizes, voxel spacings, class 
 ratios etc vary drastically.
 For example, images in the [Liver and Liver Tumor Segmentation Challenge dataset](https://competitions.codalab.org/competitions/17094) 
