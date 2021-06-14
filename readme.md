@@ -1,5 +1,9 @@
-# nnU-Net on AM README: 
-To run: 
+# nnU-Net on AM: 
+## Contains codes for: 
+```
+V. W. H. Wong, M. Ferguson, K. H. Law, Yung-Tsun T. Lee and P. Witherell, "Segmentation of Additive Manufacturing Defects Using U-Net", 41th Computers and Information in Engineering Conference (CIE). August 17-20, 2021.
+```
+## To run: 
 1. Go through nnU-Net installation instructions
 2. Run data_cleanup.ipynb to format the AM data into nnU-Net's acceptable format
 3. Run pipeline.ipynb to reproduce results for the paper. 
