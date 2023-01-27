@@ -1,7 +1,7 @@
 # nnU-Net on AM: 
 ## Contains codes for: 
 ```
-V. W. H. Wong, M. Ferguson, K. H. Law, Yung-Tsun T. Lee and P. Witherell, "Segmentation of Additive Manufacturing Defects Using U-Net", 41th Computers and Information in Engineering Conference (CIE). August 17-20, 2021.
+V. W. H. Wong, M. Ferguson, K. H. Law, Yung-Tsun T. Lee and P. Witherell, "Segmentation of Additive Manufacturing Defects Using U-Net", ASME Journal of Computing and Information Science in Engineering. June 2022; 22(3): 031005. https://doi.org/10.1115/1.4053078
 ```
 ## To run: 
 0. Download Dataset from https://www.nist.gov/el/intelligent-systems-division-73500/cocr-am-xct-data
